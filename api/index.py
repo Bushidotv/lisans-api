@@ -1,15 +1,9 @@
 """
 Lisans dogrulama API'si (FastAPI + Supabase)
-
-Ortam degiskenleri:
-    SUPABASE_URL          -> https://xxxx.supabase.co
-    SUPABASE_SERVICE_KEY  -> service_role anahtari (SADECE sunucuda!)
-
-Vercel serverless entry point: api/index.py
 """
 
 import os
-
+from datetime import datetime
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 from supabase import Client, create_client
@@ -32,8 +26,19 @@ class ValidateResponse(BaseModel):
     reason: str
 
 
+@app.get("/_debug_inspect")
+def debug_inspect():
+    out = {}
+    for tbl in ["licenses", "license", "devices", "user_licenses"]:
+        try:
+            res = supabase.table(tbl).select("*").limit(5).execute()
+            out[tbl] = {"status": "found", "data": res.data}
+        except Exception as e:
+            out[tbl] = {"status": "error", "error": str(e)}
+    return out
+
+
 def _do_validate(license_key: str, device_id: str) -> ValidateResponse:
-    """Shared logic: calls Supabase RPC and returns a ValidateResponse."""
     try:
         result = supabase.rpc(
             "validate_license",
@@ -52,10 +57,6 @@ def _do_validate(license_key: str, device_id: str) -> ValidateResponse:
     )
 
 
-# ---------------------------------------------------------------
-# GET /validate_license?license_key=...&hwid=...
-# (URL format used by the client app)
-# ---------------------------------------------------------------
 @app.get("/validate_license", response_model=ValidateResponse)
 def validate_license_get(
     license_key: str = Query(..., min_length=1, max_length=128),
@@ -64,9 +65,6 @@ def validate_license_get(
     return _do_validate(license_key, hwid)
 
 
-# ---------------------------------------------------------------
-# POST /validate  (JSON body – kept for backward compatibility)
-# ---------------------------------------------------------------
 @app.post("/validate", response_model=ValidateResponse)
 def validate_license_post(body: ValidateRequest) -> ValidateResponse:
     return _do_validate(body.license_key, body.device_id)
